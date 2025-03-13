@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react'
 import './App.css'
 
 import { makeMove } from './mahoraga'
+import { getInput, main } from './test.ts'
 
 // Only declare the types globally
 declare global {
@@ -149,6 +150,10 @@ function App() {
     }
   }, [])
 
+  useEffect(() => {
+    main()
+  }, [])
+
 
   return (
     <>
@@ -156,7 +161,8 @@ function App() {
         <h1>MAHORAGA</h1>
         <div ref={boardRef} style={{ width: '400px', margin: '0 auto' }}></div>
       </div>
-      {/* <button>Move</button>   */}
+      <input type="text" id="userInput" placeholder="Type here"></input>
+      <button onClick={getInput}>Submit</button>
     </>
   )
 }
