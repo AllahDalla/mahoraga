@@ -392,7 +392,7 @@ function findBestMove(){
     for(const [x,y] of moves){
         let encodedMove: move = encodeMove(x, y)
         placeMove(encodedMove, 'o')
-        let score = minimax(false, 1)
+        let score = minimax(false, 1, -Infinity, Infinity)
         console.log("Score: ", score)
         console.log("Best score: ", bestScore)
         gameboard[x][y] = undefined
@@ -407,7 +407,7 @@ function findBestMove(){
 }
   
   
-function minimax(isMax: boolean, depth: number){
+function minimax(isMax: boolean, depth: number, alpha: number, beta: number){
     const winner = totalPositionValue('o')
 
 
@@ -431,11 +431,16 @@ function minimax(isMax: boolean, depth: number){
         for(let move of availableMoves()){
             if(move.length > 0){
                 gameboard[move[0]][move[1]] = 'o'
-                let score = minimax(false, depth + 1)
+                let score = minimax(false, depth + 1, alpha, beta)
                 gameboard[move[0]][move[1]] = undefined
 
                 if(score > best){
                     best = score
+                }
+
+                alpha = Math.max(alpha, best)
+                if(beta <= alpha){
+                    break
                 }
             }
         }
@@ -445,11 +450,16 @@ function minimax(isMax: boolean, depth: number){
         for(let move of availableMoves()){
             if(move.length > 0){
                 gameboard[move[0]][move[1]] = 'x'
-                let score = minimax(true, depth + 1)
+                let score = minimax(true, depth + 1, alpha, beta)
                 gameboard[move[0]][move[1]] = undefined
 
                 if(score < best){
                     best = score
+                }
+
+                beta = Math.min(beta, best)
+                if(beta <= alpha){
+                    break
                 }
 
             }
