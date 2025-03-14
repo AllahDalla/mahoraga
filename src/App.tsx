@@ -1,7 +1,7 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import './App.css'
 
-import { makeMove } from './mahoraga'
+import { Mahoraga } from './mahoraga'
 import { getInput, main } from './test.ts'
 
 // Only declare the types globally
@@ -30,6 +30,8 @@ function App() {
   const boardInstanceRef = useRef<any>(null)
   const turn = useRef<string>('white')
   const previousMoves = useRef<string>('start')
+  let [engineMove, setEngineMove] = useState<string | undefined>(undefined)
+
 
 
   
@@ -37,60 +39,95 @@ function App() {
     return 'from' in move && 'to' in move && 'before' in move && 'after' in move || 'to' in move;
   }
 
+  function engine(source: string, target:string, piece?: string){
+    const playerMove = Mahoraga.makeMove(target, source, piece)
+
+    if(playerMove && playerMove.status === 'gameover'){
+      console.log("Game over")
+      return
+    }
+
+    const engineMove: Object | null = Mahoraga.engine()
+    if(engineMove === null){
+      console.log("Illegal move")
+      return 
+    }
+    
+    if(!engineMove || typeof engineMove !== 'object'){
+      console.log("Invalid move object")
+      boardInstanceRef.current.position(previousMoves.current)
+      return
+    }
+    
+    if(!isMoveObject(engineMove)){
+      console.log("Invalid move object")
+      boardInstanceRef.current.position(previousMoves.current)
+      return
+    }
+
+    if(engineMove.to === 'offboard'){
+      console.log("Piece off board")
+      boardInstanceRef.current.position = previousMoves.current
+      return
+    }
+
+    if(engineMove.to === 'checkmate'){
+      console.log("Checkmate")
+      setTimeout(() => {
+        boardInstanceRef.current.clear()
+        boardInstanceRef.current.position('start')
+
+      }, 1000)
+      return
+    }
+
+    console.log(`Engine move -> `, engineMove.from, engineMove.to, engineMove.piece)
+    
+    const fen: string | undefined = engineMove.after
+    // setEngineMove(fen)
+    setEngineMove(`${engineMove.from}-${engineMove.to}`)
+    // boardInstanceRef.current.move(`${engineMove.from}-${engineMove.to}`)
+    previousMoves.current = fen || boardInstanceRef.current.fen()
+    
+
+
+  }
+
   function onDrop (source: any, target: any, piece: any, newPos: any, oldPos: any, orientation: any){
     console.log("Player -> ", source, target, piece)
     
     if(turn.current === 'white'){
-
+      
       if(target === 'offboard'){
         console.log("Piece off board")
         boardInstanceRef.current.position(previousMoves.current)
         return
       }
 
-      const engineMove: Object | null = makeMove(target, source)
-
-      if(engineMove === null){
-        console.log("Illegal move")
-        return 
-      }
-      
-      if(!engineMove || typeof engineMove !== 'object'){
-        console.log("Invalid move object")
-        boardInstanceRef.current.position(previousMoves.current)
-        return
-      }
-      
-      if(!isMoveObject(engineMove)){
-        console.log("Invalid move object")
-        boardInstanceRef.current.position(previousMoves.current)
-        return
-      }
-
-      if(engineMove.to === 'offboard'){
-        console.log("Piece off board")
-        boardInstanceRef.current.position = previousMoves.current
-        return
-      }
-
-      if(engineMove.to === 'checkmate'){
-        console.log("Checkmate")
-        boardInstanceRef.current.position('start')
-        return
-      }
-
-      console.log(`Engine move -> `, engineMove.from, engineMove.to, engineMove.piece)
-      
-      const fen: string | undefined = engineMove.after
-      boardInstanceRef.current.position(fen)
-      previousMoves.current = fen || boardInstanceRef.current.fen()
-      
-
+      console.log("BOARD FEN -> ", boardInstanceRef.current.fen())
+      engine(source, target, piece)
+      turn.current = 'black'
         
     }else{
       turn.current = 'white'
     }
   }
+
+  useEffect(() => {
+    console.log("Outside")
+    console.log("Outside Turn -> ", turn.current)
+    if(engineMove){
+      console.log("Inside")
+      console.log("Inside Turn -> ", turn.current)
+      boardInstanceRef.current.move(engineMove)
+      turn.current = 'white'
+    }
+
+  }, [engineMove])
+
+  useEffect(() => {
+    new Mahoraga()
+  }, [])
 
 
 
@@ -150,10 +187,6 @@ function App() {
     }
   }, [])
 
-  useEffect(() => {
-    main()
-  }, [])
-
 
   return (
     <>
@@ -161,8 +194,6 @@ function App() {
         <h1>MAHORAGA</h1>
         <div ref={boardRef} style={{ width: '400px', margin: '0 auto' }}></div>
       </div>
-      <input type="text" id="userInput" placeholder="Type here"></input>
-      <button onClick={getInput}>Submit</button>
     </>
   )
 }
