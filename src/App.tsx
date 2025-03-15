@@ -42,59 +42,60 @@ function App() {
   function engine(source: string, target:string, piece?: string){
     const playerMove = Mahoraga.makeMove(target, source, piece)
 
+
+    if(playerMove === undefined){
+      return false
+    }
+
     if(playerMove && playerMove.status === 'gameover'){
       console.log("Game over")
-      return
+      setTimeout(() => {
+        boardInstanceRef.current.clear()
+        boardInstanceRef.current.position('start')
+        Mahoraga.restartGame()
+
+      }, 1000)
+      return false
     }
 
     const engineMove: Object | null = Mahoraga.engine()
     if(engineMove === null){
       console.log("Illegal move")
-      return 
+      return false
     }
     
     if(!engineMove || typeof engineMove !== 'object'){
       console.log("Invalid move object")
       boardInstanceRef.current.position(previousMoves.current)
-      return
+      return false
     }
     
     if(!isMoveObject(engineMove)){
       console.log("Invalid move object")
       boardInstanceRef.current.position(previousMoves.current)
-      return
+      return false
     }
 
     if(engineMove.to === 'offboard'){
       console.log("Piece off board")
       boardInstanceRef.current.position = previousMoves.current
-      return
+      return false
     }
 
-    if(engineMove.to === 'checkmate'){
-      console.log("Checkmate")
-      setTimeout(() => {
-        boardInstanceRef.current.clear()
-        boardInstanceRef.current.position('start')
-
-      }, 1000)
-      return
-    }
-
-    console.log(`Engine move -> `, engineMove.from, engineMove.to, engineMove.piece)
+    // console.log(`Engine move -> `, engineMove.from, engineMove.to, engineMove.piece)
+    // console.log("Engine move fen (after move)-> ", engineMove.after)
     
     const fen: string | undefined = engineMove.after
-    // setEngineMove(fen)
-    setEngineMove(`${engineMove.from}-${engineMove.to}`)
+    setEngineMove(fen)
+    // setEngineMove(`${engineMove.from}-${engineMove.to}`)
     // boardInstanceRef.current.move(`${engineMove.from}-${engineMove.to}`)
     previousMoves.current = fen || boardInstanceRef.current.fen()
     
-
-
+    return true
   }
 
   function onDrop (source: any, target: any, piece: any, newPos: any, oldPos: any, orientation: any){
-    console.log("Player -> ", source, target, piece)
+    // console.log("Player -> ", source, target, piece)
     
     if(turn.current === 'white'){
       
@@ -104,9 +105,10 @@ function App() {
         return
       }
 
-      console.log("BOARD FEN -> ", boardInstanceRef.current.fen())
-      engine(source, target, piece)
-      turn.current = 'black'
+      const next: boolean = engine(source, target, piece)
+      if(next){
+        turn.current = 'black'
+      }
         
     }else{
       turn.current = 'white'
@@ -114,12 +116,10 @@ function App() {
   }
 
   useEffect(() => {
-    console.log("Outside")
-    console.log("Outside Turn -> ", turn.current)
+    // console.log("Outside Turn -> ", turn.current)
     if(engineMove){
-      console.log("Inside")
-      console.log("Inside Turn -> ", turn.current)
-      boardInstanceRef.current.move(engineMove)
+      // console.log("Inside Turn -> ", turn.current)
+      boardInstanceRef.current.position(engineMove)
       turn.current = 'white'
     }
 
@@ -127,6 +127,11 @@ function App() {
 
   useEffect(() => {
     new Mahoraga()
+    // console.log("Moves -> ", Mahoraga.chess.moves())
+    // console.log("Move Order -> ", Mahoraga.moveOrder())
+    // console.log("Piece Position -> ", Mahoraga.getPiecePosition({type: 'p', color: 'b'}))
+    // console.log("Pawn Value -> ", Mahoraga.materialValue('b'))
+    // console.log("Piece Moves -> ", Mahoraga.getPieceMoves({type: 'n', color: 'w'}))
   }, [])
 
 
