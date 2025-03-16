@@ -132,6 +132,7 @@ function App() {
     // console.log("Piece Position -> ", Mahoraga.getPiecePosition({type: 'p', color: 'b'}))
     // console.log("Pawn Value -> ", Mahoraga.materialValue('b'))
     // console.log("Piece Moves -> ", Mahoraga.getPieceMoves({type: 'n', color: 'w'}))
+    // console.log("Tables -> ", Mahoraga.preCalcValue())
   }, [])
 
 

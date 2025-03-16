@@ -6,8 +6,8 @@ import { bishopSquareValues, kingEndSquareValues, kingMiddleSquareValues, knight
 type PieceSymbol = 'p' | 'n' | 'b' | 'r' | 'q' | 'k'
 export class Mahoraga {
     public static chess: Chess;
-    // public static whiteValue = 24000
-    // public static blackValue = 24000
+    public static whiteValue = 24000
+    public static blackValue = -24000
     public static whitePieceVal: Record<string, number> = {
         'p': 100,
         'n': 320,
@@ -35,6 +35,10 @@ export class Mahoraga {
     private static blackKingEndTable: Record<string, number>;
 
     private static transpositionTable: Map<string , {score: number, depth: number}> = new Map();
+
+    public static performance: number = 0
+    public static whiteLastMoveValue: Map<string, number> = new Map()
+    public static blackLastMoveValue: Map<string, number> = new Map()
 
     /**
      * Initializes a new chess game with an optional starting position.
@@ -105,11 +109,24 @@ export class Mahoraga {
     public static engine(){
         try {
 
+            // const now = Date.now()
+
+            
             if(Mahoraga.chess.turn() === 'b'){
+                // console.log(Mahoraga.chess.moves())
+                // for(let i = 0; i < 1000000; i++){
+                //     Mahoraga.chess.move('Nf6')
+                //     Mahoraga.chess.undo()
+                // }
+    
+                // const elapsedTime = Date.now() - now
+                // console.log(`Elapsed time -> ${elapsedTime / 1000} seconds for 100 iterations`)
                 const move = this.findBestMove()
                 const engineMove: Object | null = Mahoraga.chess.move(move)
+                // console.log("Perfomance count [get piece position calls] -> ", Mahoraga.performance)
                 return engineMove
             }
+
 
             console.log("Waiting for white")
             return null
@@ -121,7 +138,7 @@ export class Mahoraga {
         }
     }
 
-    private static evaluateBoard(color: 'w' | 'b'): number{
+    private static evaluateBoard(piece: {type: string, color: 'w' | 'b', from: string, to: string, isCapture: boolean, capturedPiece: string},color: 'w' | 'b'): number{
         let boardValue: number = 0
 
         if(Mahoraga.chess.isCheckmate()){
@@ -140,10 +157,10 @@ export class Mahoraga {
         }
 
         if(color === 'w'){
-            boardValue += Mahoraga.materialValue('w') * (-1)
+            boardValue += Mahoraga.materialValue(piece) * (-1)
             
         }else{
-            boardValue += Math.abs(Mahoraga.materialValue('b'))
+            boardValue += Math.abs(Mahoraga.materialValue(piece))
         }
 
         return boardValue
@@ -153,23 +170,28 @@ export class Mahoraga {
     public static findBestMove(): string{
         let bestScore = -Infinity
         let bestMove: string = ''
-        let timeLimit: number = 90000
+        let timeLimit: number = 15000
         let startTime = Date.now()
         let orderedMoves = this.moveOrder()
 
         for(let maxDepth = 2; maxDepth++;){
             for(const move of orderedMoves) {
-                Mahoraga.chess.move(move)
+                const moveObject = Mahoraga.chess.move(move)
+                if(moveObject && moveObject.isCapture() || moveObject.isEnPassant()){
+                    console.log("Capture Move Object => ", moveObject)
+                }
                 const performance = Date.now()
-                const score = this.minimax(false, 1, maxDepth, -Infinity, Infinity, 'w')
+                const score = this.minimax(false, 1, maxDepth, -Infinity, Infinity, 'w', {type: moveObject.piece, color: moveObject.color, from: moveObject.from, to: moveObject.to, isCapture: moveObject.captured !== undefined, capturedPiece: moveObject.captured ? moveObject.captured : ''})
                 const elapsedTime = performance - Date.now()
                 Mahoraga.chess.undo()
                 if(score > bestScore){
                     bestScore = score
                     bestMove = move
                 }
-                console.log(`Elapsed time -> ${elapsedTime / 1000}s ; maxDepth -> ${maxDepth} ; Score -> ${score} ; Best move -> ${bestMove}`)
+                // console.log(`Elapsed time -> ${elapsedTime / 1000}s ; maxDepth -> ${maxDepth} ; Score -> ${score} ; Best move -> ${bestMove}`)
             }
+
+            console.log("Max depth -> ", maxDepth)
 
             if(Date.now() - startTime > timeLimit){
                 break
@@ -183,15 +205,14 @@ export class Mahoraga {
     }
 
 
-    public static minimax(isMax: boolean, depth: number, maxDepth: number, alpha: number, beta: number, color:  'w' | 'b'): number{
+    public static minimax(isMax: boolean, depth: number, maxDepth: number, alpha: number, beta: number, color:  'w' | 'b', piece: {type: string, color: 'w' | 'b', from: string, to: string, isCapture: boolean, capturedPiece: string}): number{
         try {
-            const boardValue = Mahoraga.evaluateBoard(color)
+            const boardValue = Mahoraga.evaluateBoard(piece, color)
             const fen = Mahoraga.chess.fen()
             const cacheKey = `${fen}_${depth}_${isMax}`
             const cachedResult = this.transpositionTable.get(cacheKey)
 
             if(cachedResult && cachedResult.depth >= maxDepth - depth){
-                console.log("Cache hit -> ", cacheKey)
                 return cachedResult.score
             }
     
@@ -216,10 +237,11 @@ export class Mahoraga {
                 let best = -Infinity
                 for(const move of orderedMoves){
                     if(move){
-                        Mahoraga.chess.move(move)
-                        let score = this.minimax(false, depth + 1, maxDepth, alpha, beta, 'w')
+                        const moveObject = Mahoraga.chess.move(move)
+                        let score = this.minimax(false, depth + 1, maxDepth, alpha, beta, 'w', {type: moveObject.piece, color: moveObject.color, from: moveObject.from, to: moveObject.to, isCapture: moveObject.captured !== undefined, capturedPiece: moveObject.captured ? moveObject.captured: ''})
                         best = Math.max(best, score)
                         Mahoraga.chess.undo()
+                        this.whiteValue -=     this.whiteLastMoveValue.get(move) || 0
                         alpha = Math.max(alpha, best)
                         if(beta <= alpha){
                             break
@@ -232,10 +254,11 @@ export class Mahoraga {
                 let best = Infinity
                 for(const move of orderedMoves){
                     if(move){
-                        Mahoraga.chess.move(move)
-                        let score = this.minimax(true, depth + 1, maxDepth, alpha, beta, 'b')
+                        const moveObject = Mahoraga.chess.move(move)
+                        let score = this.minimax(true, depth + 1, maxDepth, alpha, beta, 'b', {type: moveObject.piece, color: moveObject.color, from: moveObject.from, to: moveObject.to, isCapture: moveObject.captured !== undefined, capturedPiece: moveObject.captured ? moveObject.captured: ''})
                         best = Math.min(best, score)
                         Mahoraga.chess.undo()
+                        this.blackValue -=     this.blackLastMoveValue.get(move) || 0
                         beta = Math.min(beta, best)
                         if(beta <= alpha){
                             break
@@ -255,6 +278,7 @@ export class Mahoraga {
 
 
     public static getPiecePosition(piece: {type: string, color: 'w' | 'b'}): (string | undefined)[]{
+        this.performance += 1
         let board = Mahoraga.chess.board().flat()
         let results = []
 
@@ -308,31 +332,180 @@ export class Mahoraga {
         return Mahoraga.getPiecePosition({type: 'k', color: clr})
     }
 
-    public static materialValue(color: 'w' | 'b'){
-        const performance = Date.now()
-        if(color === 'w'){
-            let pawns = (this.getPawns(color).length * Mahoraga.whitePieceVal['p']) + this.pawnPositionValue(color)
-            let knights = (this.getKnights(color).length * Mahoraga.whitePieceVal['n']) + this.knightPositionValue(color)
-            let bishops = (this.getBishops(color).length * Mahoraga.whitePieceVal['b']) + this.bishopPositionValue(color)
-            let rooks = (this.getRooks(color).length * Mahoraga.whitePieceVal['r']) + this.rookPositionValue(color)
-            let queens = (this.getQueens(color).length  * Mahoraga.whitePieceVal['q']) + this.queenPositionValue(color)
-            let king = Mahoraga.whitePieceVal['k'] + this.kingPositionValue(color)
-            const elapsedTime = Date.now() - performance
-            console.log(`Material Value Time [white]: ${elapsedTime}ms`)
-            return pawns + knights + bishops + rooks + queens + king
+    public static materialValue(piece: {type: string, color: 'w' | 'b', from: string, to:string, isCapture: boolean, capturedPiece: string}) {
+
+        if(piece.isCapture){
+            if(piece.capturedPiece === 'q'){
+                if(piece.color === 'w'){
+                    const val = this.blackPieceVal['q'] + (this.blackQueenValueTable.get(piece.to) || 0)
+                    this.blackValue += val
+                    this.whiteLastMoveValue.set(piece.to, val)
+                    return this.blackValue
+                }else{
+                    const val = this.whitePieceVal['q'] + (this.whiteQueenValueTable.get(piece.to) || 0)
+                    this.whiteValue += val
+                    this.blackLastMoveValue.set(piece.to, val)
+                    return this.whiteValue
+                }
+            }
+
+            if(piece.capturedPiece === 'r'){
+                if(piece.color === 'w'){
+                    const val = this.blackPieceVal['r'] + (this.blackRookValueTable.get(piece.to) || 0)
+                    this.blackValue += val
+                    this.whiteLastMoveValue.set(piece.to, val)
+                    return this.blackValue
+                }else{
+                    const val = this.whitePieceVal['r'] + (this.whiteRookValueTable.get(piece.to) || 0)
+                    this.whiteValue += val
+                    this.blackLastMoveValue.set(piece.to, val)
+                    return this.whiteValue
+                }
+            }
+
+            if(piece.capturedPiece === 'b'){
+                if(piece.color === 'w'){
+                    const val = this.blackPieceVal['b'] + (this.blackBishopValueTable.get(piece.to) || 0)
+                    this.blackValue += val
+                    this.whiteLastMoveValue.set(piece.to, val)
+                    return this.blackValue
+                }else{
+                    const val = this.whitePieceVal['b'] + (this.whiteBishopValueTable.get(piece.to) || 0)
+                    this.whiteValue += val
+                    this.blackLastMoveValue.set(piece.to, val)
+                    return this.whiteValue
+                }
+            }
+
+            if(piece.capturedPiece === 'n'){
+                if(piece.color === 'w'){
+                    const val = this.blackPieceVal['n'] + (this.blackKnightValueTable.get(piece.to) || 0)
+                    this.blackValue += val
+                    this.whiteLastMoveValue.set(piece.to, val)
+                    return this.blackValue
+                }else{
+                    const val = this.whitePieceVal['n'] + (this.whiteKnightValueTable.get(piece.to) || 0)
+                    this.whiteValue += val
+                    this.blackLastMoveValue.set(piece.to, val)
+                    return this.whiteValue
+                }
+            }
+
+            if(piece.color === 'w'){
+                const val = this.blackPieceVal['p'] + (this.blackPawnValueTable.get(piece.to) || 0)
+                this.blackValue += val
+                this.whiteLastMoveValue.set(piece.to, val)
+                return this.blackValue
+            }
+            const val = this.whitePieceVal['p'] + (this.whitePawnValueTable.get(piece.to) || 0)
+            this.whiteValue += val
+            this.blackLastMoveValue.set(piece.to, val)
+            return this.whiteValue
         }
-       
-        let pawns = (this.getPawns(color).length * Mahoraga.blackPieceVal['p']) + this.pawnPositionValue(color)
-        let knights = (this.getKnights(color).length * Mahoraga.blackPieceVal['n']) + this.knightPositionValue(color)
-        let bishops = (this.getBishops(color).length * Mahoraga.blackPieceVal['b']) + this.bishopPositionValue(color)
-        let rooks = (this.getRooks(color).length * Mahoraga.blackPieceVal['r']) + this.rookPositionValue(color)
-        let queens = (this.getQueens(color).length  * Mahoraga.blackPieceVal['q']) + this.queenPositionValue(color)
-        let king = Mahoraga.blackPieceVal['k'] + this.kingPositionValue(color)
-        const elapsedTime = Date.now() - performance
-        console.log(`Material Value Time [black]: ${elapsedTime}ms`)
-        return pawns + knights + bishops + rooks + queens + king
         
+        if(piece.type === 'k'){
+            if(piece.color === 'w'){
+                const val = this.whiteKingValueTable.get(piece.to) || 0
+                this.whiteValue += val
+                this.blackLastMoveValue.set(piece.to, val)
+                return this.whiteValue
+            }
+            const val = this.blackKingValueTable.get(piece.to) || 0
+            this.blackValue += val
+            this.whiteLastMoveValue.set(piece.to, val)
+            return this.blackValue
+        }
+    
+        if(piece.type === 'q'){
+            if(piece.color === 'w'){
+                const val = this.whiteQueenValueTable.get(piece.to) || 0
+                this.whiteValue += val
+                this.blackLastMoveValue.set(piece.to, val)
+                return this.whiteValue
+            }
+            const val = this.blackQueenValueTable.get(piece.to) || 0
+            this.blackValue += val
+            this.whiteLastMoveValue.set(piece.to, val)
+            return this.blackValue
+        }
+    
+        if(piece.type === 'r'){
+            if(piece.color === 'w'){
+                const val = this.whiteRookValueTable.get(piece.to) || 0
+                this.whiteValue += val
+                this.blackLastMoveValue.set(piece.to, val)
+                return this.whiteValue
+            }
+            const val = this.blackRookValueTable.get(piece.to) || 0
+            this.blackValue += val
+            this.whiteLastMoveValue.set(piece.to, val)
+            return this.blackValue
+        }
+    
+        if(piece.type === 'b'){
+            if(piece.color === 'w'){
+                const val = this.whiteBishopValueTable.get(piece.to) || 0
+                this.whiteValue += val
+                this.blackLastMoveValue.set(piece.to, val)
+                return this.whiteValue
+            }
+            const val = this.blackBishopValueTable.get(piece.to) || 0
+            this.blackValue += val
+            this.whiteLastMoveValue.set(piece.to, val)
+            return this.blackValue
+        }
+    
+        if(piece.type === 'n'){
+            if(piece.color === 'w'){
+                const val = this.whiteKnightValueTable.get(piece.to) || 0
+                this.whiteValue += val
+                this.blackLastMoveValue.set(piece.to, val)
+                return this.whiteValue
+            }
+            const val = this.blackKnightValueTable.get(piece.to) || 0
+            this.blackValue += val
+            this.whiteLastMoveValue.set(piece.to, val)
+            return this.blackValue
+        }
+    
+        if(piece.color === 'w'){
+            const val = this.whitePawnValueTable.get(piece.to) || 0
+            this.whiteValue += val
+            this.blackLastMoveValue.set(piece.to, val)
+            return this.whiteValue
+        }
+    
+        const val = this.blackPawnValueTable.get(piece.to) || 0
+        this.blackValue += val
+        this.whiteLastMoveValue.set(piece.to, val)
+        return this.blackValue
     }
+
+    // public static materialValue(color: 'w' | 'b'){
+    //     const performance = Date.now()
+    //     if(color === 'w'){
+    //         let pawns = (this.getPawns(color).length * Mahoraga.whitePieceVal['p']) + this.pawnPositionValue(color)
+    //         let knights = (this.getKnights(color).length * Mahoraga.whitePieceVal['n']) + this.knightPositionValue(color)
+    //         let bishops = (this.getBishops(color).length * Mahoraga.whitePieceVal['b']) + this.bishopPositionValue(color)
+    //         let rooks = (this.getRooks(color).length * Mahoraga.whitePieceVal['r']) + this.rookPositionValue(color)
+    //         let queens = (this.getQueens(color).length  * Mahoraga.whitePieceVal['q']) + this.queenPositionValue(color)
+    //         let king = Mahoraga.whitePieceVal['k'] + this.kingPositionValue(color)
+    //         const elapsedTime = Date.now() - performance
+    //         // console.log(`Material Value Time [white]: ${elapsedTime}ms`)
+    //         return pawns + knights + bishops + rooks + queens + king
+    //     }
+       
+    //     let pawns = (this.getPawns(color).length * Mahoraga.blackPieceVal['p']) + this.pawnPositionValue(color)
+    //     let knights = (this.getKnights(color).length * Mahoraga.blackPieceVal['n']) + this.knightPositionValue(color)
+    //     let bishops = (this.getBishops(color).length * Mahoraga.blackPieceVal['b']) + this.bishopPositionValue(color)
+    //     let rooks = (this.getRooks(color).length * Mahoraga.blackPieceVal['r']) + this.rookPositionValue(color)
+    //     let queens = (this.getQueens(color).length  * Mahoraga.blackPieceVal['q']) + this.queenPositionValue(color)
+    //     let king = Mahoraga.blackPieceVal['k'] + this.kingPositionValue(color)
+    //     const elapsedTime = Date.now() - performance
+    //     // console.log(`Material Value Time [black]: ${elapsedTime}ms`)
+    //     return pawns + knights + bishops + rooks + queens + king
+        
+    // }
 
     public static pawnPositionValue(color: 'w' | 'b'){
         let pawns = this.getPawns(color)
@@ -434,7 +607,7 @@ export class Mahoraga {
         }
     
         const elapsedTime = Date.now() - performance
-        console.log(`Move Order Time: ${elapsedTime}ms`)
+        // console.log(`Move Order Time: ${elapsedTime}ms`)
     
 
         // Return just the moves in the sorted order
@@ -469,7 +642,154 @@ export class Mahoraga {
     
     return blackTable;
   }
+
+  private static whiteKingValueTable: Map<string, number> = new Map()
+  private static whiteQueenValueTable: Map<string, number> = new Map() 
+  private static whiteRookValueTable: Map<string, number> = new Map() 
+  private static whiteBishopValueTable: Map<string, number> = new Map() 
+  private static whiteKnightValueTable: Map<string, number> = new Map() 
+  private static whitePawnValueTable: Map<string, number> = new Map() 
+
+  private static blackKingValueTable: Map<string, number> = new Map() 
+  private static blackQueenValueTable: Map<string, number> = new Map() 
+  private static blackRookValueTable: Map<string, number> = new Map() 
+  private static blackBishopValueTable: Map<string, number> = new Map() 
+  private static blackKnightValueTable: Map<string, number> = new Map() 
+  private static blackPawnValueTable: Map<string, number> = new Map() 
+
+
+
+  public static preCalcValue(){
+    this.whiteKingValueTable.set('e1', this.whitePieceVal['k'] + this.getKingMiddleTable('w')['e1'])
+    this.whiteQueenValueTable.set('d1', this.whitePieceVal['q'] + this.getQueenTable('w')['d1'])
     
+    this.blackKingValueTable.set('e8', this.blackPieceVal['k'] + this.getKingMiddleTable('b')['e8'])
+    this.blackQueenValueTable.set('d8', this.blackPieceVal['q'] + this.getQueenTable('b')['d8'])
+    
+
+    for(let col of 'abcdefgh'){
+        if(col === 'a' || col === 'h'){
+            this.whiteRookValueTable.set(col + '1', this.whitePieceVal['r'] + this.getRookTable('w')[col + '1'])
+            this.blackRookValueTable.set(col + '8', this.blackPieceVal['r'] + this.getRookTable('b')[col + '8'])
+        }
+        if(col === 'b' || col === 'g'){
+            this.whiteKnightValueTable.set(col + '1', this.whitePieceVal['n'] + this.getBishopTable('w')[col + '1'])
+            this.blackKnightValueTable.set(col + '8', this.blackPieceVal['n'] + this.getBishopTable('b')[col + '8'])
+        }
+        if(col === 'c' || col === 'f'){
+            this.whiteBishopValueTable.set(col + '1', this.whitePieceVal['b'] + this.getBishopTable('w')[col + '1'])
+            this.blackBishopValueTable.set(col + '8', this.blackPieceVal['b'] + this.getBishopTable('b')[col + '8'])
+        }
+
+        this.whitePawnValueTable.set(col + '2', this.whitePieceVal['p'] + this.getPawnTable('w')[col + '2'])
+        this.blackPawnValueTable.set(col + '7', this.blackPieceVal['p'] + this.getPawnTable('b')[col + '7'])
+
+    }
+
+    console.log("White King ", this.whiteKingValueTable)
+    console.log("White Queen ", this.whiteQueenValueTable)
+    console.log("White Rook ", this.whiteRookValueTable)
+    console.log("White Bishop ", this.whiteBishopValueTable)
+    console.log("White Knight ", this.whiteKnightValueTable)
+    console.log("White Pawn ", this.whitePawnValueTable)
+
+    console.log("Black King ", this.blackKingValueTable)
+    console.log("Black Queen ", this.blackQueenValueTable)
+    console.log("Black Rook ", this.blackRookValueTable)
+    console.log("Black Bishop ", this.blackBishopValueTable)
+    console.log("Black Knight ", this.blackKnightValueTable)
+    console.log("Black Pawn ", this.blackPawnValueTable)
+
+
+  }
+
+  public static something(piece: {type: string, color: 'w' | 'b', from: string, to:string}) {
+    if(piece.type === 'k'){
+        if(piece.color === 'w'){
+            this.whiteKingValueTable.delete(piece.from)
+            const val = this.whitePieceVal['k'] + this.getKingMiddleTable('w')[piece.to]
+            this.whiteKingValueTable.set(piece.to, val)
+            return this.whiteValue += val
+
+        }else{
+            this.blackKingValueTable.delete(piece.from)
+            const val = this.blackPieceVal['k'] + this.getKingMiddleTable('b')[piece.to]
+            this.blackKingValueTable.set(piece.to, val)
+            return this.blackValue += val
+        }
+    }
+
+    if(piece.type === 'q'){
+        if(piece.color === 'w'){
+            this.whiteQueenValueTable.delete(piece.from)
+            const val = this.whitePieceVal['q'] + this.getQueenTable('w')[piece.to]
+            this.whiteQueenValueTable.set(piece.to, val)
+            return this.whiteValue += val
+        }else{
+            this.blackQueenValueTable.delete(piece.from)
+            const val = this.blackPieceVal['q'] + this.getQueenTable('b')[piece.to]
+            this.blackQueenValueTable.set(piece.to, val)
+            return this.blackValue += val
+        }
+    }
+
+    if(piece.type === 'r'){
+        if(piece.color === 'w'){
+            this.whiteRookValueTable.delete(piece.from)
+            const val = this.whitePieceVal['r'] + this.getRookTable('w')[piece.to]
+            this.whiteRookValueTable.set(piece.to, val)
+            return this.whiteValue += val
+        }else{
+            this.blackRookValueTable.delete(piece.from)
+            const val = this.blackPieceVal['r'] + this.getRookTable('b')[piece.to]
+            this.blackRookValueTable.set(piece.to, val)
+            return this.blackValue += val
+        }
+    }
+
+    if(piece.type === 'b'){
+        if(piece.color === 'w'){
+            this.whiteBishopValueTable.delete(piece.from)
+            const val = this.whitePieceVal['b'] + this.getBishopTable('w')[piece.to]
+            this.whiteBishopValueTable.set(piece.to, val)
+            return this.whiteValue += val
+        }else{
+            this.blackBishopValueTable.delete(piece.from)
+            const val = this.blackPieceVal['b'] + this.getBishopTable('b')[piece.to]
+            this.blackBishopValueTable.set(piece.to, val)
+            return this.blackValue += val
+        }
+    }
+
+    if(piece.type === 'n'){
+        if(piece.color === 'w'){
+            this.whiteKnightValueTable.delete(piece.from)
+            const val = this.whitePieceVal['n'] + this.getBishopTable('w')[piece.to]
+            this.whiteKnightValueTable.set(piece.to, val)
+            return this.whiteValue += val
+        }else{
+            this.blackKnightValueTable.delete(piece.from)
+            const val = this.blackPieceVal['n'] + this.getBishopTable('b')[piece.to]
+            this.blackKnightValueTable.set(piece.to, val)
+            return this.blackValue += val
+        }
+    }
+
+    if(piece.color === 'w'){
+        this.whitePawnValueTable.delete(piece.from)
+        const val = this.whitePieceVal['p'] + this.getPawnTable('w')[piece.to]
+        this.whitePawnValueTable.set(piece.to, val)
+        return this.whiteValue += val
+    }else{
+        this.blackPawnValueTable.delete(piece.from)
+        const val = this.blackPieceVal['p'] + this.getPawnTable('b')[piece.to]
+        this.blackPawnValueTable.set(piece.to, val)
+        return this.blackValue += val
+    }
+  }
+    
+
+  
 
     // Pawn Table
 public static getPawnTable(color: 'w' | 'b'): Record<string, number> {
