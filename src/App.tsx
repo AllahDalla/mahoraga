@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from 'react'
 import './App.css'
 
 import { Mahoraga } from './mahoraga'
-import { getInput, main } from './test.ts'
 
 // Only declare the types globally
 declare global {
@@ -39,7 +38,7 @@ function App() {
     return 'from' in move && 'to' in move && 'before' in move && 'after' in move || 'to' in move;
   }
 
-  function engine(source: string, target:string, piece?: string){
+  async function engine(source: string, target:string, piece?: string){
     const playerMove = Mahoraga.makeMove(target, source, piece)
 
 
@@ -58,7 +57,7 @@ function App() {
       return false
     }
 
-    const engineMove: Object | null = Mahoraga.engine()
+    const engineMove: Object | null = await Mahoraga.engine()
     if(engineMove === null){
       console.log("Illegal move")
       return false
@@ -69,6 +68,8 @@ function App() {
       boardInstanceRef.current.position(previousMoves.current)
       return false
     }
+
+    console.log("Engine move App.tsx -> ", engineMove)
     
     if(!isMoveObject(engineMove)){
       console.log("Invalid move object")
@@ -94,9 +95,10 @@ function App() {
     return true
   }
 
-  function onDrop (source: any, target: any, piece: any, newPos: any, oldPos: any, orientation: any){
+  async function onDrop (source: any, target: any, piece: any, newPos: any, oldPos: any, orientation: any){
     // console.log("Player -> ", source, target, piece)
     
+    console.log("Current turn -> ", turn.current)
     if(turn.current === 'white'){
       
       if(target === 'offboard'){
@@ -105,13 +107,14 @@ function App() {
         return
       }
 
-      const next: boolean = engine(source, target, piece)
-      if(next){
-        turn.current = 'black'
-      }
+      await engine(source, target, piece)
+      turn.current = 'black'
+      // if(next){
+        // }
         
-    }else{
-      turn.current = 'white'
+      }else{
+        await engine(source, target, piece)
+        turn.current = 'white'
     }
   }
 
@@ -127,12 +130,6 @@ function App() {
 
   useEffect(() => {
     new Mahoraga()
-    // console.log("Moves -> ", Mahoraga.chess.moves())
-    // console.log("Move Order -> ", Mahoraga.moveOrder())
-    // console.log("Piece Position -> ", Mahoraga.getPiecePosition({type: 'p', color: 'b'}))
-    // console.log("Pawn Value -> ", Mahoraga.materialValue('b'))
-    // console.log("Piece Moves -> ", Mahoraga.getPieceMoves({type: 'n', color: 'w'}))
-    // console.log("Tables -> ", Mahoraga.preCalcValue())
   }, [])
 
 

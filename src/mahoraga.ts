@@ -1,23 +1,16 @@
 import { Chess, Move, validateFen } from "chess.js"
 import { PAWN, KNIGHT, ROOK, BISHOP, QUEEN, KING, WHITE, BLACK } from "chess.js"
 import { bishopSquareValues, kingEndSquareValues, kingMiddleSquareValues, knightSquareValues, pawnSquareValues, queenSquareValues, rookSquareValues } from "./square_table/square_tables";
-import { loadEngine } from './wasmEngine.js';
+// import {loadEngine} from "./wasmEngine.js";
 
 
 
 
-async function runEngine() {
-  const engine = await loadEngine();
+async function loadEngine() {
+  const engine = await window.Module;
   // Initialize engine
   engine.ccall('initialize_engine');
-  // Send a command and get a response
-  const response = engine.ccall(
-    'wasm_uci_loop', // exported C function name
-    'string',        // return type
-    ['string'],      // argument types
-    ['position startpos'] // arguments
-  );
-  console.log(response);
+  return engine;
 }
 
 
@@ -58,6 +51,7 @@ export class Mahoraga {
     private static blackKingEndTable: Record<string, number>;
 
     private static transpositionTable: Map<string , {score: number, depth: number}> = new Map();
+    private static wasmEngine: any = null;
 
     public static performance: number = 0
     public static whiteLastMoveValue: Map<string, number> = new Map()
@@ -72,6 +66,9 @@ export class Mahoraga {
      */
     constructor(beginningPosition: string = 'start'){
 
+        // load wasm module
+        Mahoraga._talk_to_mahoraga_c("position startpos");
+        
         if(!(beginningPosition === 'start')){
             const validate: {ok: boolean; error?: string | undefined} = validateFen(beginningPosition)
             if(validate.ok){
@@ -82,7 +79,7 @@ export class Mahoraga {
                 return
             }
         }
-
+        
         Mahoraga.chess = new Chess()
         Mahoraga.setPawnTable(this.mirrorSquareTable(pawnSquareValues))
         Mahoraga.setKnightTable(this.mirrorSquareTable(knightSquareValues))
@@ -93,6 +90,22 @@ export class Mahoraga {
         Mahoraga.setKingEndTable(this.mirrorSquareTable(kingEndSquareValues))
         
         
+    }
+    
+    private static async _talk_to_mahoraga_c(command: string): Promise<string>{
+        
+        Mahoraga.wasmEngine = await loadEngine();
+        // Send a command and get a response
+        // console.log("Time of call", Mahoraga.wasmEngine);
+        const response: string = await Mahoraga.wasmEngine.ccall(
+            'wasm_uci_loop', // exported C function name
+            'string',        // return type
+            ['string'],      // argument types
+            [command] // arguments
+        );
+        console.log("Engine response", response);
+
+        return response;
     }
     
     /**
@@ -129,29 +142,36 @@ export class Mahoraga {
     }
 
 
-    public static engine(){
+    public static async engine(){
         try {
 
-            // const now = Date.now()
 
             
             if(Mahoraga.chess.turn() === 'b'){
-                // console.log(Mahoraga.chess.moves())
-                // for(let i = 0; i < 1000000; i++){
-                //     Mahoraga.chess.move('Nf6')
-                //     Mahoraga.chess.undo()
-                // }
-    
-                // const elapsedTime = Date.now() - now
-                // console.log(`Elapsed time -> ${elapsedTime / 1000} seconds for 100 iterations`)
-                const move = this.findBestMove()
-                const engineMove: Object | null = Mahoraga.chess.move(move)
-                // console.log("Perfomance count [get piece position calls] -> ", Mahoraga.performance)
+               
+                const position_command = `position fen ${this.chess.fen()}`;
+                console.log("FEN string from board -> ", this.chess.fen());
+
+                this._talk_to_mahoraga_c(position_command);
+                var bestmove: string = await this._talk_to_mahoraga_c("go depth 8")
+                var engineMove;
+
+                engineMove = {
+                    from: bestmove.substring(0, 2),
+                    to: bestmove.substring(2, 4),
+                    before: '',
+                    after: ''
+                } as any;
+                // Mahoraga.chess.
+
+                const move = Mahoraga.chess.move(engineMove);
+                engineMove['before'] = move.before;
+                engineMove['after'] = move.after;
+                
                 return engineMove
             }
 
 
-            console.log("Waiting for white")
             return null
             
         } catch (error) {
@@ -190,134 +210,133 @@ export class Mahoraga {
     }
 
 
-    public static findBestMove(): string{
-        let bestScore = -Infinity
-        let bestMove: string = ''
-        let timeLimit: number = 15000
-        let startTime = Date.now()
-        let orderedMoves = this.moveOrder()
+    // public static findBestMove(): string{
+    //     let bestScore = -Infinity
+    //     let bestMove: string = ''
+    //     let timeLimit: number = 5000
+    //     let startTime = Date.now()
+    //     let orderedMoves = this.moveOrder()
 
-        for(let maxDepth = 2; maxDepth++;){
-            for(const move of orderedMoves) {
-                const moveObject = Mahoraga.chess.move(move)
-                if(moveObject && moveObject.isCapture() || moveObject.isEnPassant()){
-                    console.log("Capture Move Object => ", moveObject)
-                }
-                const performance = Date.now()
-                const score = this.minimax(false, 1, maxDepth, -Infinity, Infinity, 'w', {type: moveObject.piece, color: moveObject.color, from: moveObject.from, to: moveObject.to, isCapture: moveObject.captured !== undefined, capturedPiece: moveObject.captured ? moveObject.captured : ''})
-                const elapsedTime = performance - Date.now()
-                Mahoraga.chess.undo()
-                if(score > bestScore){
-                    bestScore = score
-                    bestMove = move
-                }
-                // console.log(`Elapsed time -> ${elapsedTime / 1000}s ; maxDepth -> ${maxDepth} ; Score -> ${score} ; Best move -> ${bestMove}`)
-            }
+    //     for(let maxDepth = 1; maxDepth < 2; maxDepth++){
+    //         for(const move of orderedMoves) {
+    //             const moveObject = Mahoraga.chess.move(move)
+    //             if(moveObject && moveObject.isCapture() || moveObject.isEnPassant()){
+    //                 console.log("Capture Move Object => ", moveObject)
+    //             }
+    //             const performance = Date.now()
+    //             const score = this.minimax(false, 1, maxDepth, -Infinity, Infinity, 'w', {type: moveObject.piece, color: moveObject.color, from: moveObject.from, to: moveObject.to, isCapture: moveObject.captured !== undefined, capturedPiece: moveObject.captured ? moveObject.captured : ''})
+    //             const elapsedTime = performance - Date.now()
+    //             Mahoraga.chess.undo()
+    //             if(score > bestScore){
+    //                 bestScore = score
+    //                 bestMove = move
+    //             }
+    //         }
 
-            console.log("Max depth -> ", maxDepth)
+    //         console.log("Max depth -> ", maxDepth)
 
-            if(Date.now() - startTime > timeLimit){
-                break
-            }
+    //         if(Date.now() - startTime > timeLimit){
+    //             break
+    //         }
 
-        }
+    //     }
 
-        console.log("Best move -> ", bestMove)
-        return bestMove
+    //     console.log("Best move -> ", bestMove)
+    //     return bestMove
 
-    }
+    // }
 
 
-    public static minimax(isMax: boolean, depth: number, maxDepth: number, alpha: number, beta: number, color:  'w' | 'b', piece: {type: string, color: 'w' | 'b', from: string, to: string, isCapture: boolean, capturedPiece: string}): number{
-        try {
-            const boardValue = Mahoraga.evaluateBoard(piece, color)
-            const fen = Mahoraga.chess.fen()
-            const cacheKey = `${fen}_${depth}_${isMax}`
-            const cachedResult = this.transpositionTable.get(cacheKey)
+    // public static minimax(isMax: boolean, depth: number, maxDepth: number, alpha: number, beta: number, color:  'w' | 'b', piece: {type: string, color: 'w' | 'b', from: string, to: string, isCapture: boolean, capturedPiece: string}): number{
+    //     try {
+    //         const boardValue = Mahoraga.evaluateBoard(piece, color)
+    //         const fen = Mahoraga.chess.fen()
+    //         const cacheKey = `${fen}_${depth}_${isMax}`
+    //         const cachedResult = this.transpositionTable.get(cacheKey)
 
-            if(cachedResult && cachedResult.depth >= maxDepth - depth){
-                return cachedResult.score
-            }
+    //         if(cachedResult && cachedResult.depth >= maxDepth - depth){
+    //             return cachedResult.score
+    //         }
     
-            // win
-            if(boardValue === 1000000){
-                return boardValue - depth
-            }
+    //         // win
+    //         if(boardValue === 1000000){
+    //             return boardValue - depth
+    //         }
     
-            // loss
-            if(boardValue === -1000000){
-                return boardValue + depth
-            }
+    //         // loss
+    //         if(boardValue === -1000000){
+    //             return boardValue + depth
+    //         }
     
-            // draw or depth limit
-            if(depth === maxDepth || boardValue === 50){
-                return boardValue - depth
-            }
+    //         // draw or depth limit
+    //         if(depth === maxDepth || boardValue === 50){
+    //             return boardValue - depth
+    //         }
 
-            const orderedMoves = this.moveOrder()
+    //         const orderedMoves = this.moveOrder()
     
-            if(isMax){
-                let best = -Infinity
-                for(const move of orderedMoves){
-                    if(move){
-                        const moveObject = Mahoraga.chess.move(move)
-                        let score = this.minimax(false, depth + 1, maxDepth, alpha, beta, 'w', {type: moveObject.piece, color: moveObject.color, from: moveObject.from, to: moveObject.to, isCapture: moveObject.captured !== undefined, capturedPiece: moveObject.captured ? moveObject.captured: ''})
-                        best = Math.max(best, score)
-                        Mahoraga.chess.undo()
-                        this.whiteValue -=     this.whiteLastMoveValue.get(move) || 0
-                        alpha = Math.max(alpha, best)
-                        if(beta <= alpha){
-                            break
-                        }
-                    }
-                }
-                this.transpositionTable.set(cacheKey, {score: best, depth: depth})
-                return best
-            }else{
-                let best = Infinity
-                for(const move of orderedMoves){
-                    if(move){
-                        const moveObject = Mahoraga.chess.move(move)
-                        let score = this.minimax(true, depth + 1, maxDepth, alpha, beta, 'b', {type: moveObject.piece, color: moveObject.color, from: moveObject.from, to: moveObject.to, isCapture: moveObject.captured !== undefined, capturedPiece: moveObject.captured ? moveObject.captured: ''})
-                        best = Math.min(best, score)
-                        Mahoraga.chess.undo()
-                        this.blackValue -=     this.blackLastMoveValue.get(move) || 0
-                        beta = Math.min(beta, best)
-                        if(beta <= alpha){
-                            break
-                        }
-                    }
-                }
-                this.transpositionTable.set(cacheKey, {score: best, depth: depth})
-                return best
-            }
+    //         if(isMax){
+    //             let best = -Infinity
+    //             for(const move of orderedMoves){
+    //                 if(move){
+    //                     const moveObject = Mahoraga.chess.move(move)
+    //                     let score = this.minimax(false, depth + 1, maxDepth, alpha, beta, 'w', {type: moveObject.piece, color: moveObject.color, from: moveObject.from, to: moveObject.to, isCapture: moveObject.captured !== undefined, capturedPiece: moveObject.captured ? moveObject.captured: ''})
+    //                     best = Math.max(best, score)
+    //                     Mahoraga.chess.undo()
+    //                     this.whiteValue -=     this.whiteLastMoveValue.get(move) || 0
+    //                     alpha = Math.max(alpha, best)
+    //                     if(beta <= alpha){
+    //                         break
+    //                     }
+    //                 }
+    //             }
+    //             this.transpositionTable.set(cacheKey, {score: best, depth: depth})
+    //             return best
+    //         }else{
+    //             let best = Infinity
+    //             for(const move of orderedMoves){
+    //                 if(move){
+    //                     const moveObject = Mahoraga.chess.move(move)
+    //                     let score = this.minimax(true, depth + 1, maxDepth, alpha, beta, 'b', {type: moveObject.piece, color: moveObject.color, from: moveObject.from, to: moveObject.to, isCapture: moveObject.captured !== undefined, capturedPiece: moveObject.captured ? moveObject.captured: ''})
+    //                     best = Math.min(best, score)
+    //                     Mahoraga.chess.undo()
+    //                     this.blackValue -=     this.blackLastMoveValue.get(move) || 0
+    //                     beta = Math.min(beta, best)
+    //                     if(beta <= alpha){
+    //                         break
+    //                     }
+    //                 }
+    //             }
+    //             this.transpositionTable.set(cacheKey, {score: best, depth: depth})
+    //             return best
+    //         }
             
-        } catch (error) {
-            console.log("Error in minimax -> ", error)
-            return 0
-        }
+    //     } catch (error) {
+    //         console.log("Error in minimax -> ", error)
+    //         return 0
+    //     }
 
-    }
+    // }
 
 
-    public static getPiecePosition(piece: {type: string, color: 'w' | 'b'}): (string | undefined)[]{
-        this.performance += 1
-        let board = Mahoraga.chess.board().flat()
-        let results = []
+    // public static getPiecePosition(piece: {type: string, color: 'w' | 'b'}): (string | undefined)[]{
+    //     this.performance += 1
+    //     let board = Mahoraga.chess.board().flat()
+    //     let results = []
 
-        for(let i = 0; i < board.length; i++){
-            if(board[i] !== null && board[i]!.type === piece.type && board[i]!.color === piece.color){
-                const row = 'abcdefgh'[i % 8]
-                const col = Math.ceil((64 - i) / 8)
-                results.push(row + col)
-            }
+    //     for(let i = 0; i < board.length; i++){
+    //         if(board[i] !== null && board[i]!.type === piece.type && board[i]!.color === piece.color){
+    //             const row = 'abcdefgh'[i % 8]
+    //             const col = Math.ceil((64 - i) / 8)
+    //             results.push(row + col)
+    //         }
                 
-        }
+    //     }
             
 
-        return results
+    //     return results
 
-    }
+    // }
 
     public static getPieceMoves(p: {type: PieceSymbol, color: 'w' | 'b'}): string[]{
        const moves = Mahoraga.chess.moves({piece: p.type, verbose:true})
@@ -332,28 +351,28 @@ export class Mahoraga {
        return results
     }
 
-    public static getPawns(clr: 'w' | 'b'){
-        return Mahoraga.getPiecePosition({type: 'p', color: clr})
-    }
+    // public static getPawns(clr: 'w' | 'b'){
+    //     return Mahoraga.getPiecePosition({type: 'p', color: clr})
+    // }
 
-    public static getKnights(clr: 'w' | 'b'){
-        return Mahoraga.getPiecePosition({type: 'n', color: clr})
-    }
-    public static getRooks(clr: 'w' | 'b'){
-        return Mahoraga.getPiecePosition({type: 'r', color: clr})
-    }
+    // public static getKnights(clr: 'w' | 'b'){
+    //     return Mahoraga.getPiecePosition({type: 'n', color: clr})
+    // }
+    // public static getRooks(clr: 'w' | 'b'){
+    //     return Mahoraga.getPiecePosition({type: 'r', color: clr})
+    // }
 
-    public static getBishops(clr: 'w' | 'b'){
-        return Mahoraga.getPiecePosition({type: 'b', color: clr})
-    }
+    // public static getBishops(clr: 'w' | 'b'){
+    //     return Mahoraga.getPiecePosition({type: 'b', color: clr})
+    // }
 
-    public static getQueens(clr: 'w' | 'b'){
-        return Mahoraga.getPiecePosition({type: 'q', color: clr})
-    }
+    // public static getQueens(clr: 'w' | 'b'){
+    //     return Mahoraga.getPiecePosition({type: 'q', color: clr})
+    // }
 
-    public static getKings(clr: 'w' | 'b'){
-        return Mahoraga.getPiecePosition({type: 'k', color: clr})
-    }
+    // public static getKings(clr: 'w' | 'b'){
+    //     return Mahoraga.getPiecePosition({type: 'k', color: clr})
+    // }
 
     public static materialValue(piece: {type: string, color: 'w' | 'b', from: string, to:string, isCapture: boolean, capturedPiece: string}) {
 
@@ -530,72 +549,72 @@ export class Mahoraga {
         
     // }
 
-    public static pawnPositionValue(color: 'w' | 'b'){
-        let pawns = this.getPawns(color)
-        let pawns_value = 0
-        for(let i = 0; i < pawns.length; i++){
-            if(pawns[i] && pawns[i] !== undefined){
-                pawns_value += Mahoraga.getPawnTable(color)[pawns[i] as string]
-            }
-        }
+    // public static pawnPositionValue(color: 'w' | 'b'){
+    //     let pawns = this.getPawns(color)
+    //     let pawns_value = 0
+    //     for(let i = 0; i < pawns.length; i++){
+    //         if(pawns[i] && pawns[i] !== undefined){
+    //             pawns_value += Mahoraga.getPawnTable(color)[pawns[i] as string]
+    //         }
+    //     }
 
-        return pawns_value
-    }
+    //     return pawns_value
+    // }
 
-    public static knightPositionValue(color: 'w' | 'b'){
-        let knights = this.getKnights(color)
-        let knights_value = 0
-        for(let i = 0; i < knights.length; i++){
-            if(knights[i] && knights[i] !== undefined){
-                knights_value += Mahoraga.getKnightTable(color)[knights[i] as string]
-            }
-        }
-        return knights_value
-    }
+    // public static knightPositionValue(color: 'w' | 'b'){
+    //     let knights = this.getKnights(color)
+    //     let knights_value = 0
+    //     for(let i = 0; i < knights.length; i++){
+    //         if(knights[i] && knights[i] !== undefined){
+    //             knights_value += Mahoraga.getKnightTable(color)[knights[i] as string]
+    //         }
+    //     }
+    //     return knights_value
+    // }
 
-    public static bishopPositionValue(color: 'w' | 'b'){
-        let bishops = this.getBishops(color)
-        let bishops_value = 0
-        for(let i = 0; i < bishops.length; i++){
-            if(bishops[i] && bishops[i] !== undefined){
-                bishops_value += Mahoraga.getBishopTable(color)[bishops[i] as string]
-            }
-        }
-        return bishops_value
-    }
+    // public static bishopPositionValue(color: 'w' | 'b'){
+    //     let bishops = this.getBishops(color)
+    //     let bishops_value = 0
+    //     for(let i = 0; i < bishops.length; i++){
+    //         if(bishops[i] && bishops[i] !== undefined){
+    //             bishops_value += Mahoraga.getBishopTable(color)[bishops[i] as string]
+    //         }
+    //     }
+    //     return bishops_value
+    // }
 
-    public static rookPositionValue(color: 'w' | 'b'){
-        let rooks = this.getRooks(color)
-        let rooks_value = 0
-        for(let i = 0; i < rooks.length; i++){
-            if(rooks[i] && rooks[i] !== undefined){
-                rooks_value += Mahoraga.getRookTable(color)[rooks[i] as string]
-            }
-        }
-        return rooks_value
-    }
+    // public static rookPositionValue(color: 'w' | 'b'){
+    //     let rooks = this.getRooks(color)
+    //     let rooks_value = 0
+    //     for(let i = 0; i < rooks.length; i++){
+    //         if(rooks[i] && rooks[i] !== undefined){
+    //             rooks_value += Mahoraga.getRookTable(color)[rooks[i] as string]
+    //         }
+    //     }
+    //     return rooks_value
+    // }
 
-    public static queenPositionValue(color: 'w' | 'b'){
-        let queens = this.getQueens(color)
-        let queens_value = 0
-        for(let i = 0; i < queens.length; i++){
-            if(queens[i] && queens[i] !== undefined){
-                queens_value += Mahoraga.getQueenTable(color)[queens[i] as string]
-            }
-        }
-        return queens_value
-    }
+    // public static queenPositionValue(color: 'w' | 'b'){
+    //     let queens = this.getQueens(color)
+    //     let queens_value = 0
+    //     for(let i = 0; i < queens.length; i++){
+    //         if(queens[i] && queens[i] !== undefined){
+    //             queens_value += Mahoraga.getQueenTable(color)[queens[i] as string]
+    //         }
+    //     }
+    //     return queens_value
+    // }
 
-    public static kingPositionValue(color: 'w' | 'b'){
-        let kings = this.getKings(color)
-        let kings_value = 0
-        for(let i = 0; i < kings.length; i++){
-            if(kings[i] && kings[i] !== undefined){
-                kings_value += Mahoraga.getKingMiddleTable(color)[kings[i] as string]
-            }
-        }
-        return kings_value
-    }
+    // public static kingPositionValue(color: 'w' | 'b'){
+    //     let kings = this.getKings(color)
+    //     let kings_value = 0
+    //     for(let i = 0; i < kings.length; i++){
+    //         if(kings[i] && kings[i] !== undefined){
+    //             kings_value += Mahoraga.getKingMiddleTable(color)[kings[i] as string]
+    //         }
+    //     }
+    //     return kings_value
+    // }
 
 
 
