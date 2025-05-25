@@ -69,7 +69,6 @@ function App() {
       return false
     }
 
-    console.log("Engine move App.tsx -> ", engineMove)
     
     if(!isMoveObject(engineMove)){
       console.log("Invalid move object")
@@ -83,13 +82,11 @@ function App() {
       return false
     }
 
-    // console.log(`Engine move -> `, engineMove.from, engineMove.to, engineMove.piece)
-    // console.log("Engine move fen (after move)-> ", engineMove.after)
+    
     
     const fen: string | undefined = engineMove.after
     setEngineMove(fen)
-    // setEngineMove(`${engineMove.from}-${engineMove.to}`)
-    // boardInstanceRef.current.move(`${engineMove.from}-${engineMove.to}`)
+    
     previousMoves.current = fen || boardInstanceRef.current.fen()
     
     return true
@@ -109,8 +106,7 @@ function App() {
 
       await engine(source, target, piece)
       turn.current = 'black'
-      // if(next){
-        // }
+      
         
       }else{
         await engine(source, target, piece)
@@ -119,9 +115,7 @@ function App() {
   }
 
   useEffect(() => {
-    // console.log("Outside Turn -> ", turn.current)
     if(engineMove){
-      // console.log("Inside Turn -> ", turn.current)
       boardInstanceRef.current.position(engineMove)
       turn.current = 'white'
     }
