@@ -1,6 +1,29 @@
 import { Chess, Move, validateFen } from "chess.js"
 import { PAWN, KNIGHT, ROOK, BISHOP, QUEEN, KING, WHITE, BLACK } from "chess.js"
 import { bishopSquareValues, kingEndSquareValues, kingMiddleSquareValues, knightSquareValues, pawnSquareValues, queenSquareValues, rookSquareValues } from "./square_table/square_tables";
+import { loadEngine } from './wasmEngine.js';
+
+
+
+
+async function runEngine() {
+  const engine = await loadEngine();
+  // Initialize engine
+  engine.ccall('initialize_engine');
+  // Send a command and get a response
+  const response = engine.ccall(
+    'wasm_uci_loop', // exported C function name
+    'string',        // return type
+    ['string'],      // argument types
+    ['position startpos'] // arguments
+  );
+  console.log(response);
+}
+
+
+
+
+
 
 // const chess = new Chess('r1bqkb1r/p1ppPppp/1pn2n2/8/8/8/PPP1PPPP/RNBQKBNR w KQkq - 0')
 type PieceSymbol = 'p' | 'n' | 'b' | 'r' | 'q' | 'k'
