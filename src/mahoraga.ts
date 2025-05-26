@@ -3,6 +3,11 @@ import { PAWN, KNIGHT, ROOK, BISHOP, QUEEN, KING, WHITE, BLACK } from "chess.js"
 import { bishopSquareValues, kingEndSquareValues, kingMiddleSquareValues, knightSquareValues, pawnSquareValues, queenSquareValues, rookSquareValues } from "./square_table/square_tables";
 // import {loadEngine} from "./wasmEngine.js";
 
+declare global {
+  interface Window {
+    Module: any;
+  }
+}
 
 
 
@@ -150,10 +155,9 @@ export class Mahoraga {
             if(Mahoraga.chess.turn() === 'b'){
                
                 const position_command = `position fen ${this.chess.fen()}`;
-                console.log("FEN string from board -> ", this.chess.fen());
 
                 this._talk_to_mahoraga_c(position_command);
-                var bestmove: string = await this._talk_to_mahoraga_c("go depth 8")
+                var bestmove: string = await this._talk_to_mahoraga_c("go depth 6")
                 var engineMove;
 
                 engineMove = {
